@@ -15,7 +15,8 @@ from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, as_completed, ALL_COMPLETED, wait
 
 CONFIG = None  # Auto Load Config And Set
-TEST_MODE = False  # final, it is False
+BREAK_ERROR_MODE = True  # final, it is True
+BREAK_OUTPUT_MODE = True # final, it is True (if stdin, you can global it in func, and set it to False)
 
 class C:
     FLAG_NUM = 50  # === per_side is 50
@@ -102,6 +103,16 @@ class Cluster:
         # sync time server
         SYNC_SERVER=""
     )
+    # CONFIG = CONFIG._replace(key=value) # also change value
+    # raw_dict = CONFIG._asdict()  #  also reverse to raw_dict
+
+    # Not Work in ClassMeta
+    # NODES = (
+    #     f"{HOST_NAME + str(i)}" for i in range(BASE_INDEX, NODE_COUNT + 1)
+    # )
+    # NODES = []
+    # for i in range(BASE_INDEX, NODE_COUNT + 1):
+    #     NODES.append(f'{HOST_NAME + str(i)}')
 
     GLOBAL_LOCK = Lock()  # must be out of for-loop
 
@@ -113,12 +124,14 @@ class Cluster:
         else:
             raise Exception("type of command must be str or List")
 
-        err_pipeline = None if TEST_MODE == True else subprocess.PIPE
+        output_pipeline = subprocess.PIPE if BREAK_OUTPUT_MODE == True else None
+        err_pipeline = subprocess.PIPE if BREAK_ERROR_MODE == True else None
+        
 
         result = subprocess.run(
             command,
-            stdout=subprocess.PIPE,
-            stderr=err_pipeline,  # if TEST_MODE: None - don't break pipe;  else: Break Raw Linux Error Msg
+            stdout=output_pipeline, # if BREAK_OUTPUT_MODE: None - don't break pipe;  else: Break Ouput (default)
+            stderr=err_pipeline,    # if BREAK_ERROR_MODE: None - don't break pipe;   else: Break Raw Linux Error Msg(default)
             shell=shell_str,
             encoding="utf-8"
         )  # MayBe Version
@@ -400,7 +413,7 @@ def main():
     parser.add_argument('as', dest="as_", nargs='*', type=str,
                         help="Run SH Async      For All Cluster Async")
 
-    parser.add_argument('ap', dest="ap", nargs='*', type=str,
+    parser.add_argument('ap', dest="ap", nargs='+', type=str,
                         help="Scp Async:        master -> workers")
 
     parser.add_argument('akill', dest="akill", action=_KillaAction,
@@ -413,7 +426,7 @@ def main():
                         help="Start|Status|Stop Zookeeper For All Cluster")
 
     parser.add_argument('ak', dest="ak", nargs="+", type=str,
-                        help="Start|Stop Kafka OR c|p|list|describe|delete topic")
+                        help="Start|Stop Kafka OR c|p|list|desc|delete topic")
 
     parser.add_argument('ack', dest="ack", nargs=1, type=str,
                         help="Start|Status|Stop ClickHouse For All Cluster")
@@ -438,69 +451,76 @@ def main():
             r.a_run(f'{zk_path / "bin/zkServer.sh"} {args.azk[0]}')
         else:
             parser.print_help()
-
-
+    
     # Kafka
-    elif len(args.ak) == 1:
+    elif args.ak:
+        if len(args.ak) == 1:
+            if args.ak == ["start"]:
+                r.a_run(
+                    f'{ak_path / "bin/kafka-server-start.sh"} -daemon {ak_path / "config/server.properties"}',
+                    msg="Starting Kafka ......"
+                )
+            elif args.ak == ["stop"]:
+                r.a_run(
+                    f'{ak_path / "bin/kafka-server-stop.sh"} {args.ak[0]}',
+                    msg="Stopping Kafka ......"
+                )
+            # list topics
+            elif args.ak[0] == "list":
+                result = r.run( 
+                    f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
+                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                    + "--list"
+                )
+                print(result)
+            else:
+                parser.print_help()
 
-        if args.ak == ["start"]:
-            r.a_run(
-                f'{ak_path / "bin/kafka-server-start.sh"} -daemon {ak_path / "config/server.properties"}',
-                msg="Starting Kafka ......"
-            )
-        elif args.ak == ["stop"]:
-            r.a_run(
-                f'{ak_path / "bin/kafka-server-stop.sh"} {args.ak[0]}',
-                msg="Stopping Kafka ......"
-            )
-        # list topics
-        elif args.ak[0] == "list":
-            result = r.run( 
-                f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
-                + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
-                + "--list"
-            )
+        elif len(args.ak) > 1:
+            # consumer
+            result = ""
+
+            if args.ak[0] == "c":
+                global BREAK_OUTPUT_MODE
+                BREAK_OUTPUT_MODE = False
+
+                result = r.run( 
+                    f'{ak_path / "bin/kafka-console-consumer.sh --bootstrap-server"} ' \
+                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                    + "--topic" + " " \
+                    + args.ak[1]
+                )
+                BREAK_OUTPUT_MODE = True
+                
+            # producer
+            elif args.ak[0] == "p":
+                result = r.run( 
+                    f'{ak_path / "bin/kafka-console-producer.sh --broker-list"} ' \
+                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                    + "--topic" + " " \
+                    + args.ak[1]
+                )
+
+            # describe one topic
+            elif args.ak[0] == "desc":
+                result = r.run( 
+                    f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
+                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                    + "--describe" + " " \
+                    + "--topic" + " " \
+                    + args.ak[1]
+                )
+            # delete one topic
+            elif args.ak[0] == "delete":
+                result = r.run( 
+                    f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
+                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                    + "--delete" + " " \
+                    + "--topic" + " " \
+                    + args.ak[1]
+                )
             print(result)
-        else:
-            parser.print_help()
-
-    elif len(args.ak) > 1:
-        # consumer
-        if args.ak[0] == "c":
-            result = r.run( 
-                f'{ak_path / "bin/kafka-console-consumer.sh --bootstrap-server"} ' \
-                + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
-                + "--topic" + " " \
-                + args.ak[1]
-            )
-        # producer
-        elif args.ak[0] == "p":
-            result = r.run( 
-                f'{ak_path / "bin/kafka-console-producer.sh --broker-list"} ' \
-                + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
-                + "--topic" + " " \
-                + args.ak[1]
-            )
-        # describe one topic
-        elif args.ak[0] == "desc":
-            result = r.run( 
-                f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
-                + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
-                + "--describe" + " " \
-                + "--topic" + " " \
-                + args.ak[1]
-            )
-        # delete one topic
-        elif args.ak[0] == "delete":
-            result = r.run( 
-                f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
-                + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
-                + "--delete" + " " \
-                + "--topic" + " " \
-                + args.ak[1]
-            )
-        print(result)
-        print()
+            print()
         
     # ClickHouse
     elif args.ack:
