@@ -393,7 +393,8 @@ def main():
     parser = argparse.ArgumentParser(
         prefix_chars='a',
         prog='LIN',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        # formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=argparse.RawTextHelpFormatter,
         usage="",
         description=textwrap.indent(r'''
         ┌───────────────Must Be Python3.6+───────────┐
@@ -426,7 +427,22 @@ def main():
                         help="Start|Status|Stop Zookeeper For All Cluster")
 
     parser.add_argument('ak', dest="ak", nargs="+", type=str,
-                        help="Start|Stop Kafka OR c|p|list|desc|delete topic")
+                        help=textwrap.indent(
+    """Start|Stop & Consumer|Producer & CURD Topic:
+┌────────────────────────────────
+│start:       fa ak start
+│stop:        fa ak stop
+│────────────────────────────────
+│c(consumer): fa ak c <topic>
+│p(producer): fa ak p <topic>
+│────────────Topic───────────────
+│create:      fa ak create <topic> <part_num> <rep_num>
+│desc:        fa ak desc <topic>
+│delete:      fa ak delete <topic>
+│list:        fa ak list
+└───────────────────────────────
+""","")
+    )
 
     parser.add_argument('ack', dest="ack", nargs=1, type=str,
                         help="Start|Status|Stop ClickHouse For All Cluster")
@@ -499,6 +515,21 @@ def main():
                     + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                     + "--topic" + " " \
                     + args.ak[1]
+                )
+
+            # create one topic
+            # kafka-topics.sh --create --bootstrap-server node1:9092 --topic first_xxx --partitions 2 --replication-factor 3
+            elif args.ak[0] == "create":
+                result = r.run( 
+                    f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
+                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                    + "--create" + " " \
+                    + "--topic" + " " \
+                    + args.ak[1] + " " \
+                    + "--partitions" + " " \
+                    + args.ak[2] + " " \
+                    + "--replication-factor" + " " \
+                    + args.ak[3]
                 )
 
             # describe one topic
