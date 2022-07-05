@@ -18,6 +18,18 @@ CONFIG = None  # Auto Load Config And Set
 BREAK_ERROR_MODE = True  # final, it is True
 BREAK_OUTPUT_MODE = True # final, it is True (if stdin, you can global it in func, and set it to False)
 
+
+class Interactive:
+    def __init__(self,):
+        global BREAK_OUTPUT_MODE
+        BREAK_OUTPUT_MODE = False
+
+    def __enter__(self,):
+        ...
+        
+    def __exit__(self, *args, **kwargs):
+        BREAK_OUTPUT_MODE = True
+
 class C:
     FLAG_NUM = 50  # === per_side is 50
 
@@ -101,7 +113,12 @@ class Cluster:
         HBASE_HOME="",
         SQOOP_HOME="",
         # sync time server
-        SYNC_SERVER=""
+        SYNC_SERVER="",
+        # beeline
+        BEELINE_HOST = "",
+        BEELINE_PORT = "",
+        BEELINE_USER = "",
+
     )
     # CONFIG = CONFIG._replace(key=value) # also change value
     # raw_dict = CONFIG._asdict()  #  also reverse to raw_dict
@@ -178,7 +195,13 @@ class Cluster:
                     a.str_("SQOOP_HOME") + \
                     a.line_() + \
                     a.doc_("SYNC TIME") + \
-                    a.str_('SYNC_SERVER', 'ntp4.aliyun.com')
+                    a.str_('SYNC_SERVER', 'ntp4.aliyun.com') + \
+                    a.line_() + \
+                    a.doc_("Beeline") + \
+                    a.str_('BEELINE_HOST', "node1") + \
+                    a.str_('BEELINE_PORT', "10000") + \
+                    a.str_('BEELINE_USER', "root")
+
                 f.write(final_config_str)
 
         with open(str(config_path), "r") as f:
@@ -408,6 +431,13 @@ def main():
     parser.add_argument('aping', dest="aping", action=_PingAction,
                         help="Check SSH         master -> workers")
 
+
+    parser.add_argument('atime', dest="atime", action=_TimeSync,
+                        help="Sync Time         For All Cluster")
+
+    parser.add_argument('akill', dest="akill", action=_KillaAction,
+                        help="Kill JPS App      For All Cluster")
+
     parser.add_argument('aa', dest="aa", nargs='*', type=str,
                         help="Run SH            For All Cluster")
 
@@ -417,14 +447,12 @@ def main():
     parser.add_argument('ap', dest="ap", nargs='+', type=str,
                         help="Scp Async:        master -> workers")
 
-    parser.add_argument('akill', dest="akill", action=_KillaAction,
-                        help="Kill JPS App      For All Cluster")
-
-    parser.add_argument('atime', dest="atime", action=_TimeSync,
-                        help="Sync Time         For All Cluster")
 
     parser.add_argument('azk', dest="azk", nargs=1, type=str,
                         help="Start|Status|Stop Zookeeper For All Cluster")
+
+    parser.add_argument('ack', dest="ack", nargs=1, type=str,
+                        help="Start|Status|Stop ClickHouse For All Cluster")
 
     parser.add_argument('ak', dest="ak", nargs="+", type=str,
                         help=textwrap.indent(
@@ -435,20 +463,30 @@ def main():
 │────────────────────────────────
 │c(consumer): fa ak c <topic>
 │p(producer): fa ak p <topic>
-│────────────Topic───────────────
+│────────────topic───────────────
 │create:      fa ak create <topic> <part_num> <rep_num>
 │desc:        fa ak desc <topic>
 │delete:      fa ak delete <topic>
 │list:        fa ak list
-└───────────────────────────────
+└────────────────────────────────
 ""","")
     )
 
-    parser.add_argument('ack', dest="ack", nargs=1, type=str,
-                        help="Start|Status|Stop ClickHouse For All Cluster")
-
     parser.add_argument('ahive', dest="ahive", nargs=1, type=str,
-                        help="Start|Stop        MateStore Just At Master")
+                        help=textwrap.indent(
+    """Start|Stop Hive MetaStore & hiveserver2:
+┌────────────metastore───────────
+│start:       fa ahive start
+│stop:        fa ahive stop
+│────────────hiveserver2─────────
+│start:       fa ahive start2
+│stop:        fa ahive stop2
+│────────────beeline─────────────
+│bee(no log): fa ahive bee
+│beeline:     fa ahive beeline
+└────────────────────────────────
+""","")
+    )
 
     args = parser.parse_args()  # Namespace(args1=['option1',...], args2=['option2',...])
 
@@ -497,16 +535,16 @@ def main():
             result = ""
 
             if args.ak[0] == "c":
-                global BREAK_OUTPUT_MODE
-                BREAK_OUTPUT_MODE = False
-
-                result = r.run( 
-                    f'{ak_path / "bin/kafka-console-consumer.sh --bootstrap-server"} ' \
-                    + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
-                    + "--topic" + " " \
-                    + args.ak[1]
-                )
-                BREAK_OUTPUT_MODE = True
+                # global BREAK_OUTPUT_MODE
+                # BREAK_OUTPUT_MODE = False
+                with Interactive():
+                    result = r.run( 
+                        f'{ak_path / "bin/kafka-console-consumer.sh --bootstrap-server"} ' \
+                        + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
+                        + "--topic" + " " \
+                        + args.ak[1]
+                    )
+                # BREAK_OUTPUT_MODE = True
                 
             # producer
             elif args.ak[0] == "p":
@@ -566,6 +604,8 @@ def main():
 
     # Hive(Master)
     elif args.ahive:
+
+        # metastore
         if args.ahive == ["start"]:
             r.run(
                 r'''/usr/bin/nohup $HIVE_HOME/bin/hive --service metastore > $HIVE_HOME/logs/hivemetastore-$(/bin/date '+%Y-%m-%d-%H-%M-%S').log 2>&1 &''',
@@ -576,6 +616,33 @@ def main():
                 r'''ps -ef | grep metastore | grep -v grep | awk '{print $2}' | xargs -n1 kill -9'''
             )
             print("Stopping MetaStore ......")
+
+        # hiveserver2
+        elif args.ahive == ["start2"]:
+            r.run(
+                r'''/usr/bin/nohup $HIVE_HOME/bin/hive --service hiveserver2 > $HIVE_HOME/logs/hiveserver2-$(/bin/date '+%Y-%m-%d-%H-%M-%S').log 2>&1 &''',
+            )
+            print("Starting hiveserver2 ......")
+        elif args.ahive == ["stop2"]:
+            r.run(
+                r'''ps -ef | grep hiveserver2 | grep -v grep | awk '{print $2}' | xargs -n1 kill -9'''
+            )
+            print("Stopping hiveserver2 ......")
+
+        # beeline
+        elif args.ahive in [ ["beeline"], ["bee"] ]:
+            command = f'beeline -u jdbc:hive2://{eval(CONFIG.BEELINE_HOST)}:{eval(CONFIG.BEELINE_PORT)} -n {eval(CONFIG.BEELINE_USER)}'
+            with Interactive():
+                # beeline no log (for query)
+                if args.ahive == ["bee"]:
+                    command += " --hiveconf hive.server2.logging.operation.level=NONE"
+                # beeline with log (default)
+                else:
+                    ...
+                
+                print(command)
+                os.system(command)
+
         else:
             parser.print_help()
 
