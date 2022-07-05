@@ -107,18 +107,26 @@ class Cluster:
         KAFKA_HOME="",
         HADOOP_HOME="",
         SPARK_HOME="",
+
         # db
         HIVE_HOME="",
         CK_HOME="",
         HBASE_HOME="",
         SQOOP_HOME="",
+
         # sync time server
         SYNC_SERVER="",
+
         # beeline
+        BEELINE_PATH = "",
         BEELINE_HOST = "",
         BEELINE_PORT = "",
         BEELINE_USER = "",
 
+        # thrift
+        THRIFT_HOST = "",
+        THRIFT_PORT = "",
+        THRIFT_MASTER = "",
     )
     # CONFIG = CONFIG._replace(key=value) # also change value
     # raw_dict = CONFIG._asdict()  #  also reverse to raw_dict
@@ -198,9 +206,20 @@ class Cluster:
                     a.str_('SYNC_SERVER', 'ntp4.aliyun.com') + \
                     a.line_() + \
                     a.doc_("Beeline") + \
+                    a.doc_("    $HIVE_HOME/bin/beeline") + \
+                    a.doc_("    $SPARK_HOME/bin/beeline") + \
+                    a.str_('BEELINE_PATH', "$SPARK_HOME/bin/beeline") + \
                     a.str_('BEELINE_HOST', "node1") + \
                     a.str_('BEELINE_PORT', "10000") + \
-                    a.str_('BEELINE_USER', "root")
+                    a.str_('BEELINE_USER', "root") +\
+                    a.line_() + \
+                    a.doc_("Thrift(Spark)") + \
+                    a.str_('THRIFT_HOST', "node1") + \
+                    a.str_('THRIFT_PORT', "10000") + \
+                    a.doc_("--master") + \
+                    a.doc_("    local[*]") + \
+                    a.doc_("    yarn") + \
+                    a.str_('THRIFT_MASTER', "local[*]") 
 
                 f.write(final_config_str)
 
@@ -409,8 +428,54 @@ def main():
     r = Run()
     s = Scp()
 
-
+    """
+    ... will be better
+    """
     ak_path = Cluster.get_path("KAFKA_HOME")
+    spark_path = Cluster.get_path("SPARK_HOME")
+
+
+    def beeline_common(arg_from):
+        """
+            arg_from:
+                hive:  args.ahive
+                    or
+                spark: args.ark
+
+            CONFIG.BEELINE_PATH:
+                $HIVE_HOME/bin/beeline
+                    or
+                $SPARK_HOME/bin/beeline
+        """
+
+
+        command = f'{eval(CONFIG.BEELINE_PATH)} -u jdbc:hive2://{eval(CONFIG.BEELINE_HOST)}:{eval(CONFIG.BEELINE_PORT)} -n {eval(CONFIG.BEELINE_USER)}'
+        with Interactive():
+            # beeline no log (for query)
+            if arg_from == ["bee"]:
+                command += " --hiveconf hive.server2.logging.operation.level=NONE"
+            # beeline with log (default)
+            else:
+                ...
+            
+            print(command)
+            os.system(command)
+        # CONFIG.BEELINE_PATH
+            # $HIVE_HOME/bin/beeline
+            # or
+            # $SPARK_HOME/bin/beeline
+        command = f'{eval(CONFIG.BEELINE_PATH)} -u jdbc:hive2://{eval(CONFIG.BEELINE_HOST)}:{eval(CONFIG.BEELINE_PORT)} -n {eval(CONFIG.BEELINE_USER)}'
+        with Interactive():
+            # beeline no log (for query)
+            if arg_from == ["bee"]:
+                command += " --hiveconf hive.server2.logging.operation.level=NONE"
+            # beeline with log (default)
+            else:
+                ...
+            
+            print(command)
+            os.system(command)
+
 
     # prefix_chars='a' replace "-" and "--"
     parser = argparse.ArgumentParser(
@@ -487,6 +552,23 @@ def main():
 └────────────────────────────────
 ""","")
     )
+
+    parser.add_argument('ark', dest="ark", nargs=1, type=str,
+                        help=textwrap.indent(
+    """Start|Stop Spark & Thrift Service:
+┌────────────spark───────────────
+│start:       fa ark start
+│stop:        fa ark stop
+│───────spark thrift service─────
+│start:       fa ark thstart
+│stop:        fa ark thstop
+│────────────beeline─────────────
+│bee(no log): fa ark bee
+│beeline:     fa ark beeline
+└────────────────────────────────
+""","")
+    )
+
 
     args = parser.parse_args()  # Namespace(args1=['option1',...], args2=['option2',...])
 
@@ -631,26 +713,60 @@ def main():
 
         # beeline
         elif args.ahive in [ ["beeline"], ["bee"] ]:
-            command = f'beeline -u jdbc:hive2://{eval(CONFIG.BEELINE_HOST)}:{eval(CONFIG.BEELINE_PORT)} -n {eval(CONFIG.BEELINE_USER)}'
-            with Interactive():
-                # beeline no log (for query)
-                if args.ahive == ["bee"]:
-                    command += " --hiveconf hive.server2.logging.operation.level=NONE"
-                # beeline with log (default)
-                else:
-                    ...
-                
-                print(command)
-                os.system(command)
+            beeline_common(args.ahive)
 
         else:
             parser.print_help()
 
-        # Hadoop
-        ...
+    # Spark
+    elif args.ark:
 
-        # Spark
-        ...
+        # spark service
+        if args.ark == ["start"]:
+            ...
+
+            # r.run(
+            #     r'''/usr/bin/nohup $HIVE_HOME/bin/hive --service metastore > $HIVE_HOME/logs/hivemetastore-$(/bin/date '+%Y-%m-%d-%H-%M-%S').log 2>&1 &''',
+            # )
+            # print("Starting MetaStore ......")
+        elif args.ark == ["stop"]:
+            ...
+
+            # r.run(
+            #     r'''ps -ef | grep metastore | grep -v grep | awk '{print $2}' | xargs -n1 kill -9'''
+            # )
+            # print("Stopping MetaStore ......")
+
+        # thrift
+        elif args.ark == ["thstart"]:
+            command = f'{spark_path}/sbin/start-thriftserver.sh '
+            f'--hiveconf hive.server2.thrift.bind.host={CONFIG.THRIFT_HOST} '
+            f'--hiveconf hive.server2.thrift.port={CONFIG.THRIFT_PORT} '
+            f'--master {CONFIG.THRIFT_MASTER} '
+            r.run(
+                command
+            )
+            print("Starting Spark Thrift Server ......")
+
+        elif args.ark == ["thstop"]:
+            command = f'{spark_path}/sbin/stop-thriftserver.sh'
+            r.run(
+                command
+            )
+            print("Stopping Spark Thrift Server ......")
+
+        # beeline
+        elif args.ark in [ ["beeline"], ["bee"] ]:
+            beeline_common(args.ark)
+
+        else:
+            parser.print_help()
+
+
+    # Hadoop
+
+
+
 
     # scp (Async)
     elif args.ap:  # filename_list
