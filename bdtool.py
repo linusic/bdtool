@@ -30,6 +30,21 @@ class Interactive:
     def __exit__(self, *args, **kwargs):
         BREAK_OUTPUT_MODE = True
 
+class InteractiveALL:
+    def __init__(self,):
+        global BREAK_ERROR_MODE
+        global BREAK_OUTPUT_MODE
+        BREAK_ERROR_MODE = False
+        BREAK_OUTPUT_MODE = False
+
+    def __enter__(self,):
+        ...
+        
+    def __exit__(self, *args, **kwargs):
+        BREAK_ERROR_MODE = True
+        BREAK_OUTPUT_MODE = True
+
+
 class C:
     FLAG_NUM = 50  # === per_side is 50
 
@@ -127,6 +142,16 @@ class Cluster:
         THRIFT_HOST = "",
         THRIFT_PORT = "",
         THRIFT_MASTER = "",
+
+        # spark-submit
+        master = "",
+        deploy_mode = "",
+        driver_memory = "",
+        executor_memory = "",
+        executor_cores = "",
+        class_of_jar = "",
+        py_files = "",
+
     )
     # CONFIG = CONFIG._replace(key=value) # also change value
     # raw_dict = CONFIG._asdict()  #  also reverse to raw_dict
@@ -219,7 +244,20 @@ class Cluster:
                     a.doc_("--master") + \
                     a.doc_("    local[*]") + \
                     a.doc_("    yarn") + \
-                    a.str_('THRIFT_MASTER', "local[*]") 
+                    a.str_('THRIFT_MASTER', "local[*]") + \
+                    a.line_() + \
+                    a.doc_("spark-submit") + \
+                    a.str_("master", "yarn") + \
+                    a.str_("deploy_mode", "cluster") + \
+                    a.str_("driver_memory", "4g") + \
+                    a.str_("executor_memory", "2g") + \
+                    a.str_("executor_cores", "1") + \
+                    a.line_() + \
+                    a.doc_("    org.apache.spark.examples.SparkPi") + \
+                    a.str_("class_of_jar", "") + \
+                    a.doc_("    1.py, 2.py, ...") + \
+                    a.str_("py_files", "") + \
+                    a.line_() 
 
                 f.write(final_config_str)
 
@@ -477,6 +515,44 @@ def main():
             os.system(command)
 
 
+    def submit_common(arg_from=None, type=""):
+        """
+            arg_from: args.arks
+            type    : "scala" or "python"
+        """
+
+        command = f'{spark_path}/bin/spark-submit '
+
+        if eval(CONFIG.master).strip() != "yarn":
+            command += f'--master {CONFIG.master} '
+        else:
+            command += f'--master {CONFIG.master} '
+            if eval(CONFIG.deploy_mode).strip():
+                command += f'--deploy-mode {CONFIG.deploy_mode} '
+
+        if eval(CONFIG.driver_memory).strip():
+            command += f'--driver-memory {CONFIG.driver_memory} '
+        if eval(CONFIG.executor_memory).strip():
+            command += f'--executor-memory {CONFIG.executor_memory} '
+        if eval(CONFIG.executor_cores).strip():
+            command += f'--executor-cores {CONFIG.executor_cores} '
+
+        # python or submit scala/java
+        if type == "python":
+            if eval(CONFIG.py_files).strip():
+                command += f'--py-files {CONFIG.py_files} '
+
+        if type == "scala":
+            if eval(CONFIG.class_of_jar).strip():
+                command += f'--class {CONFIG.class_of_jar} '
+
+        command += " ".join( args.arks )
+        print(command)
+
+        with InteractiveALL():
+            print ( r.run( command ) )
+
+
     # prefix_chars='a' replace "-" and "--"
     parser = argparse.ArgumentParser(
         prefix_chars='a',
@@ -486,10 +562,9 @@ def main():
         usage="",
         description=textwrap.indent(r'''
         ┌───────────────Must Be Python3.6+───────────┐
-        │ 1. make sure config your hosename          │
+        │ All Params Can Adjust In ->  ~/.config.py  │
         │────────────────────────────────────────────│
-        │ >> python lin.py aa ping -c 3 127.0.0.1    │
-        │ >> python lin.py as ping -c 3 127.0.0.1    │
+        │ >> fa ah                                   │
         └────────────────────────────────────────────┘''', " ")
     )
 
@@ -565,6 +640,15 @@ def main():
 │────────────beeline─────────────
 │bee(no log): fa ark bee
 │beeline:     fa ark beeline
+└────────────────────────────────
+""","")
+    )
+
+    parser.add_argument('arks', dest="arks", nargs="+", type=str,
+                        help=textwrap.indent(
+    """spark-submit: conf in ~/.config.py
+┌────────────spark-submit────────
+│.jar|.py     fa arks xxx.jar ...
 └────────────────────────────────
 ""","")
     )
@@ -763,9 +847,22 @@ def main():
             parser.print_help()
 
 
+    # spark-submit
+    elif args.arks:
+        # submit
+        if args.arks[0].split(".")[-1] == "jar":
+            command = submit_common(args.arks, "scala") 
+
+        #  pysubmit
+        elif args.arks[0].split(".")[-1] == "py":
+            command = submit_common(args.arks, "python") 
+
+        else:
+            print("usage:")
+            print("\tfile suffix must be .jar | .py")
+            print()
+
     # Hadoop
-
-
 
 
     # scp (Async)
