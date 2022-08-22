@@ -26,7 +26,7 @@ class Interactive:
 
     def __enter__(self,):
         ...
-        
+
     def __exit__(self, *args, **kwargs):
         BREAK_OUTPUT_MODE = True
 
@@ -39,7 +39,7 @@ class InteractiveALL:
 
     def __enter__(self,):
         ...
-        
+
     def __exit__(self, *args, **kwargs):
         BREAK_ERROR_MODE = True
         BREAK_OUTPUT_MODE = True
@@ -176,7 +176,7 @@ class Cluster:
 
         output_pipeline = subprocess.PIPE if BREAK_OUTPUT_MODE == True else None
         err_pipeline = subprocess.PIPE if BREAK_ERROR_MODE == True else None
-        
+
 
         result = subprocess.run(
             command,
@@ -257,7 +257,7 @@ class Cluster:
                     a.str_("class_of_jar", "") + \
                     a.doc_("    1.py, 2.py, ...") + \
                     a.str_("py_files", "") + \
-                    a.line_() 
+                    a.line_()
 
                 f.write(final_config_str)
 
@@ -495,7 +495,7 @@ def main():
             # beeline with log (default)
             else:
                 ...
-            
+
             print(command)
             os.system(command)
         # CONFIG.BEELINE_PATH
@@ -510,7 +510,7 @@ def main():
             # beeline with log (default)
             else:
                 ...
-            
+
             print(command)
             os.system(command)
 
@@ -652,7 +652,8 @@ def main():
 └────────────────────────────────
 ""","")
     )
-
+    parser.add_argument('air', dest="air", nargs=1, type=str,
+                        help="start|status|stop|list|wlist|slist ")
 
     args = parser.parse_args()  # Namespace(args1=['option1',...], args2=['option2',...])
 
@@ -671,7 +672,7 @@ def main():
             r.a_run(f'{zk_path / "bin/zkServer.sh"} {args.azk[0]}')
         else:
             parser.print_help()
-    
+
     # Kafka
     elif args.ak:
         if len(args.ak) == 1:
@@ -687,7 +688,7 @@ def main():
                 )
             # list topics
             elif args.ak[0] == "list":
-                result = r.run( 
+                result = r.run(
                     f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
                     + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                     + "--list"
@@ -704,17 +705,17 @@ def main():
                 # global BREAK_OUTPUT_MODE
                 # BREAK_OUTPUT_MODE = False
                 with Interactive():
-                    result = r.run( 
+                    result = r.run(
                         f'{ak_path / "bin/kafka-console-consumer.sh --bootstrap-server"} ' \
                         + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                         + "--topic" + " " \
                         + args.ak[1]
                     )
                 # BREAK_OUTPUT_MODE = True
-                
+
             # producer
             elif args.ak[0] == "p":
-                result = r.run( 
+                result = r.run(
                     f'{ak_path / "bin/kafka-console-producer.sh --broker-list"} ' \
                     + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                     + "--topic" + " " \
@@ -724,7 +725,7 @@ def main():
             # create one topic
             # kafka-topics.sh --create --bootstrap-server node1:9092 --topic first_xxx --partitions 2 --replication-factor 3
             elif args.ak[0] == "create":
-                result = r.run( 
+                result = r.run(
                     f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
                     + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                     + "--create" + " " \
@@ -738,7 +739,7 @@ def main():
 
             # describe one topic
             elif args.ak[0] == "desc":
-                result = r.run( 
+                result = r.run(
                     f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
                     + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                     + "--describe" + " " \
@@ -747,7 +748,7 @@ def main():
                 )
             # delete one topic
             elif args.ak[0] == "delete":
-                result = r.run( 
+                result = r.run(
                     f'{ak_path / "bin/kafka-topics.sh --bootstrap-server"} ' \
                     + ",".join(node+":9092" for node in eval( CONFIG.CLUSTER_NODES)) + " " \
                     + "--delete" + " " \
@@ -756,7 +757,7 @@ def main():
                 )
             print(result)
             print()
-        
+
     # ClickHouse
     elif args.ack:
         if args.ack in [["start"], ['status'], ["stop"]]:
@@ -851,16 +852,69 @@ def main():
     elif args.arks:
         # submit
         if args.arks[0].split(".")[-1] == "jar":
-            command = submit_common(args.arks, "scala") 
+            command = submit_common(args.arks, "scala")
 
         #  pysubmit
         elif args.arks[0].split(".")[-1] == "py":
-            command = submit_common(args.arks, "python") 
+            command = submit_common(args.arks, "python")
 
         else:
             print("usage:")
             print("\tfile suffix must be .jar | .py")
             print()
+
+    # Airflow
+    elif args.air:
+        # WebServer + Scheduler
+        if args.air in [["start"], ['status'], ["stop"], ["list"], ["wlist"], ["slist"]]:
+            if args.air == ["start"]:
+                print(C.purple("[Starting]"))
+                command = r"""airflow webserver -D && airflow scheduler -D"""
+                with InteractiveALL():
+                    r.run(command)
+
+            elif args.air == ["status"]:
+                print(C.purple("[Status]"))
+                if r.run("ps aux | grep airflow | grep webserver | grep -v grep") \
+                        and r.run("ps aux | grep airflow | grep scheduler | grep -v grep"):
+                    print(f"\tAirflow is {C.green('running')}")
+                else:
+                    print(f"\tAirflow is {C.red('stopped')}")
+
+            elif args.air == ["list"]:
+                print(C.purple("[WebServer+Scheduler]"))
+                command = "ps aux | grep -v grep | grep airflow"
+                with InteractiveALL():
+                    r.run(command)
+            elif args.air == ["wlist"]:
+                print(C.purple("[WebServer]"))
+                command = "ps aux | grep -v grep | grep airflow | grep webserver "
+                with InteractiveALL():
+                    r.run(command)
+            elif args.air == ["slist"]:
+                print(C.purple("[Scheduler]"))
+                command = "ps aux | grep -v grep  | grep airflow | grep scheduler"
+                with InteractiveALL():
+                    r.run(command)
+
+            elif args.air == ["stop"]:
+                print(C.purple("[Stopping]"))
+                kill_pid = r"""ps aux | grep airflow | grep -v grep | awk '{print $2}' | xargs -n1 kill -9"""
+                del_pid_file = r"""rm -rf $AIRFLOW_HOME/airflow-scheduler.pid && rm -rf $AIRFLOW_HOME/airflow-webserver.pid && rm -rf $AIRFLOW_HOME/airflow-webserver-monitor.pid"""
+                r.run(kill_pid)
+                r.run(del_pid_file)
+                print(f"\tstopping airflow ......")
+
+            else:
+                parser.print_help()
+
+        else:
+            print("single service version in the future...")
+        # Single WebServer
+        # elif args.air in [["wstart"], ['wstatus'], ["wstop"]]:
+
+        # Single Scheduler
+        # elif args.air in [["sstart"], ['sstatus'], ["sstop"]]:
 
     # Hadoop
 
