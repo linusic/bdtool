@@ -661,11 +661,12 @@ def main():
 ""","")
     )
 
-    parser.add_argument('am', dest="am", nargs=1, type=str,
+    parser.add_argument('am', dest="am", nargs="+", type=str,
                         help=textwrap.indent(
     """\
 ┌────────────Maxwell─────────────
 │fa am start|stop|restart
+│fa am bootstrap <db> <table>
 └────────────────────────────────
 ""","")
     )
@@ -934,8 +935,17 @@ def main():
 
     # Maxwell
     elif args.am:
-        if args.am in [["start"], ['stop'], ["restart"]]:
+        if len(args.am) == 3: # fa am   bootstrap <db> <table>
+            if args.am[0] in ["boot", "bootstrap"]:
+                print(C.purple("[BootStrap]"))
+                command = fr"""$MAXWELL_HOME/bin/maxwell-bootstrap --config $MAXWELL_HOME/config.properties --database {args.am[1]} --table {args.am[2]}"""
+                with InteractiveALL():
+                    r.run(command)
+            else:
+                parser.print_help()
 
+        elif len(args.am) == 1:
+            # if args.am in [["start"], ['stop'], ["restart"]]:
             if args.am == ["start"]:
                 print(C.purple("[Starting]"))
 
@@ -958,9 +968,11 @@ def main():
                 command = r"""$MAXWELL_HOME/bin/maxwell --config $MAXWELL_HOME/config.properties --daemon"""
                 with InteractiveALL():
                     r.run(command)
-
             else:
                 parser.print_help()
+
+        else:
+            parser.print_help()
 
 
 
