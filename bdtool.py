@@ -653,7 +653,22 @@ def main():
 ""","")
     )
     parser.add_argument('air', dest="air", nargs=1, type=str,
-                        help="start|status|stop|list|wlist|slist ")
+                        help=textwrap.indent(
+    """\
+┌────────────Airflow─────────────
+│fa air start|status|stop|list|wlist|slist
+└────────────────────────────────
+""","")
+    )
+
+    parser.add_argument('am', dest="am", nargs=1, type=str,
+                        help=textwrap.indent(
+    """\
+┌────────────Maxwell─────────────
+│fa am start|stop|restart
+└────────────────────────────────
+""","")
+    )
 
     args = parser.parse_args()  # Namespace(args1=['option1',...], args2=['option2',...])
 
@@ -916,7 +931,37 @@ def main():
         # Single Scheduler
         # elif args.air in [["sstart"], ['sstatus'], ["sstop"]]:
 
-    # Hadoop
+
+    # Maxwell
+    elif args.am:
+        if args.am in [["start"], ['stop'], ["restart"]]:
+
+            if args.am == ["start"]:
+                print(C.purple("[Starting]"))
+
+                is_started = r.run( """ps aux | grep maxwell.Maxwell | grep -v grep | wc -l""" )
+                if is_started.strip() == "1":
+                    print(f"\tMaxwell is {C.green('running')}")            
+                else:
+                    command = r"""$MAXWELL_HOME/bin/maxwell --config $MAXWELL_HOME/config.properties --daemon"""
+                    with InteractiveALL():
+                        r.run(command)
+
+            elif args.am == ["stop"]:
+                print(C.purple("[Stopping]"))
+                r.run(r"""ps aux | grep maxwell.Maxwell | grep -v grep | awk '{print $2}' | xargs -n1 kill -9""")
+                print(f"\tstopping Maxwell ......")
+
+            elif args.am == ["restart"]:
+                print(C.purple("[Restart]"))
+                r.run(r"""ps aux | grep maxwell.Maxwell | grep -v grep | awk '{print $2}' | xargs -n1 kill -9""")
+                command = r"""$MAXWELL_HOME/bin/maxwell --config $MAXWELL_HOME/config.properties --daemon"""
+                with InteractiveALL():
+                    r.run(command)
+
+            else:
+                parser.print_help()
+
 
 
     # scp (Async)
