@@ -20,5 +20,5 @@ fa ah
 ## Configure
 if config file not exist, you can run 👆 `fa ah` to auto generate it
 ```shell
-vi ~/.config.py
+vi ~/.config.cfg
 ```
