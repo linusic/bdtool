@@ -312,12 +312,13 @@ class Run:
 
     def _run_for_async(self, node=None, cmd=None):
 
-        return s(f'ssh {node} {cmd}') > 1
+        return s(f'ssh {node} {cmd}') > ...
 
     def _callback_for_async(self, future, node=None, msg=""):
         with Run.GLOBAL_LOCK:
             C.cprint(node)
-            print(future.result())
+            print(future.result().stderr)
+            print(future.result().stdout)
             print(msg)
 
 
@@ -544,10 +545,10 @@ def main():
     parser.add_argument('akill', dest="akill", action=_KillaAction,
                         help="Kill JPS App      For All Cluster")
 
-    parser.add_argument('aa', dest="aa", nargs='*', type=str,
+    parser.add_argument('aa', dest="aa", nargs='+', type=str,
                         help="Run SH            For All Cluster")
 
-    parser.add_argument('as', dest="as_", nargs='*', type=str,
+    parser.add_argument('as', dest="as_", nargs='+', type=str,
                         help="Run SH Async      For All Cluster Async")
 
     parser.add_argument('ap', dest="ap", nargs='+', type=str,
