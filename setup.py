@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='bdtool',
-    version="1.2.0",
+    version="1.2.2",
     author="linusic",
     author_email='cython_lin@cklin.top',
     description="script of managing some bigdata technology stack",
