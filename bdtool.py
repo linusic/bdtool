@@ -78,7 +78,7 @@ default_map = {
         "cluster": False
     },
 
-    "beeline": {"cluster": False},
+    # "beeline": {"cluster": False},
     # "thrift(spark)": {
     #     "path": "",
     # },
@@ -123,7 +123,13 @@ if not Path(config_path).exists():
     parser["flume"]["log_command"] = "tail -f $FLUME_HOME/logs/flume.log"
     parser["flume"]["log_start_command"] = "tail -f $FLUME_HOME/logs/start-flume.log"
 
-    parser["beeline"]["beeline_command"] = "beeline -u jdbc:hive2://node1:10000 -n root --hiveconf hive.server2.logging.operation.level=NONE"
+    parser["hive"]["beeline_command"] = "$HIVE_HOME/bin/beeline -u jdbc:hive2://node1:10000 -n root --hiveconf hive.server2.logging.operation.level=NONE"
+
+
+    parser["spark"]["THRIFT_HOST"] = "node1"
+    parser["spark"]["THRIFT_PORT"] = "10000"
+    parser["spark"]["THRIFT_MASTER"] = "local[*]"
+    parser["spark"]["beeline_command"] = "$SPARK_HOME/bin/beeline -u jdbc:hive2://node1:10000 -n root --hiveconf hive.server2.logging.operation.level=NONE"
 
 
     with Path(config_path).open("w") as f:
@@ -488,7 +494,7 @@ def main():
             type    : "scala" or "python"
         """
 
-        command = f'{spark_path}/bin/spark-submit '
+        command = f'{spark_home}/bin/spark-submit '
 
         if eval(CONFIG.master).strip() != "yarn":
             command += f'--master {CONFIG.master} '
@@ -799,7 +805,7 @@ def main():
             quit_cmd = C.green("!quit")
             print(C.purple(f"[NOTICE]"))
             print(C.purple(f"\tyou must exit beeline by {C.green(quit_cmd)}"))
-            s( get_value("beeline", "beeline_command") ) > None
+            s( get_value("hive", "beeline_command") ) > None
 
         else:
             parser.print_help()
@@ -820,28 +826,28 @@ def main():
             # )
             # print("Stopping MetaStore ......")
 
-        # thrift
+        # spark thrift
         elif args.ark == ["thstart"]:
-            command = f'{spark_path}/sbin/start-thriftserver.sh '
-            f'--hiveconf hive.server2.thrift.bind.host={CONFIG.THRIFT_HOST} '
-            f'--hiveconf hive.server2.thrift.port={CONFIG.THRIFT_PORT} '
-            f'--master {CONFIG.THRIFT_MASTER} '
-            r.run(
-                command
-            )
+            command = f'{spark_home}/sbin/start-thriftserver.sh '
+            f'--hiveconf hive.server2.thrift.bind.host={get_value("spark", "THRIFT_HOST")} '
+            f'--hiveconf hive.server2.thrift.port={get_value("spark", "THRIFT_PORT")} '
+            f'--master {get_value("spark", "THRIFT_MASTER")} '
+
+            s(command) > None
             print("Starting Spark Thrift Server ......")
 
         elif args.ark == ["thstop"]:
-            command = f'{spark_path}/sbin/stop-thriftserver.sh'
-            r.run(
-                command
-            )
+            command = f'{spark_home}/sbin/stop-thriftserver.sh'
+            s(command) > None
             print("Stopping Spark Thrift Server ......")
 
         # beeline
         elif args.ark in [ ["beeline"], ["bee"] ]:
-            # beeline_common(args.ark)
-            pass
+            # beeline -u jdbc:hive2://node1:10000 -n root --hiveconf hive.server2.logging.operation.level=NONE
+            quit_cmd = C.green("!quit")
+            print(C.purple(f"[NOTICE]"))
+            print(C.purple(f"\tyou must exit beeline by {C.green(quit_cmd)}"))
+            s( get_value("spark", "beeline_command") ) > None
 
         else:
             parser.print_help()
