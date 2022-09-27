@@ -182,9 +182,8 @@ def get_section_nodes_map():
 
 def is_local_or_get_nodes(section):
     section_to_nodes = get_section_nodes_map()
-    assert section in section_to_nodes, f"{section} is not in in {str([*section_to_nodes.keys()])}"
     # beside {key :[""]}
-    if section in section_to_nodes and section_to_nodes[section] != [""]:
+    if section in section_to_nodes and section_to_nodes.get(section) != [""]:
         return section_to_nodes[section]
     else:
         return True
@@ -308,7 +307,8 @@ class Run:
     def async_run(self, cmd, msg=""):
         nodes = get_nodes("run")
 
-        executor = ThreadPoolExecutor(max_workers=len(nodes) + 2)
+        len_nodes = len(nodes) or 1
+        executor = ThreadPoolExecutor(max_workers=len_nodes)
         new_f = partial(self._run_for_async, cmd=cmd)
 
         for node in nodes:
@@ -377,44 +377,65 @@ class _PingAction(BaseAction):
         self.ping_async()
 
     def ping_async(self):
-        nodes = get_nodes("ping")
+        section = "ping"
+
+        nodes = get_nodes(section)
+
+        if len(nodes) == 1:
+            sp_obj = self._run_for_ping(nodes[0])
+            self._ping_msg(sp_obj, master_=nodes[0])
+            return
 
         master = nodes[0]
         workers = nodes[1:]
-        executor = ThreadPoolExecutor(max_workers=len(workers))
 
-        def _ping_callback(future_, master_=None, worker_=None):
-            with Run.GLOBAL_LOCK:
-                sp_obj = future_.result()
-
-                # failed
-                if sp_obj.returncode != 0:
-                    m_w_str = f'[{master_} => {worker_}]'
-                    err_msg = f"""Could Not Resolve or Other Nodes Try 'ssh-copy-id {worker_}' ?"""
-
-                    print(f"{C.red('[Failed ]')} \t"
-                          f"{C.red(m_w_str)} \t* "
-                          f"{C.red(err_msg)}")
-                # succeed
-                else:
-                    m_w_str = f'[{master_} => {worker_}]'
-                    suc_msg = f'Succeed Connected Test!'
-                    print(f"{C.green('[Succeed]')} \t"
-                          f"{C.green(m_w_str)} \t* "
-                          f"{C.purple(suc_msg)}")
+        len_workers = len(workers) or 1
+        executor = ThreadPoolExecutor(max_workers=len_workers)
 
         for worker in workers:
             future = executor.submit(self._run_for_ping, worker)
-            new_callback = partial(_ping_callback, master_=master, worker_=worker)
+            new_callback = partial(self._ping_callback, master_=master, worker_=worker)
             future.add_done_callback(new_callback)
 
-    def _run_for_ping(self, node=None):
-            return s(f"ssh -o ConnectTimeout=10 {node} echo") > ...
+    def _run_for_ping(self, node):
+        return s(f"ssh -o ConnectTimeout=10 {node} echo") > ...
 
+
+    def _ping_callback(self, future_, master_=None, worker_=None):
+        with Run.GLOBAL_LOCK:
+            sp_obj = future_.result()
+            self._ping_msg(sp_obj, master_, worker_)
+
+    def _ping_msg(self, sp_obj, master_=None, worker_=None):
+        if not worker_:
+            import socket
+            worker_ = master_
+            master_ = socket.gethostname()
+
+        # failed
+        if sp_obj.returncode != 0:
+            m_w_str = f'[{master_} => {worker_}]'
+            err_msg = f"""Could Not Resolve or Other Nodes Try 'ssh-copy-id {worker_}' ?"""
+
+            print(f"{C.red('[Failed ]')} \t"
+                  f"{C.red(m_w_str)} \t* "
+                  f"{C.red(err_msg)}")
+        # succeed
+        else:
+            m_w_str = f'[{master_} => {worker_}]'
+            suc_msg = f'Succeed Connected Test!'
+            print(f"{C.green('[Succeed]')} \t"
+                  f"{C.green(m_w_str)} \t* "
+                  f"{C.purple(suc_msg)}")
 
 class Scp():
     def scp_async(self, file_list, msg=""):
         nodes = get_nodes("scp")
+        if len(nodes) == 1:
+            print(C.red('[Usage]'))
+            usage_msg = f"\tthe section {C.green('[scp]')} at least {C.green('nodes=2')} !!!"
+            print(C.purple(usage_msg))
+            return 
 
         master = nodes[0]
         workers = nodes[1:]
@@ -423,7 +444,9 @@ class Scp():
             (file, work) for file in file_list
             for work in workers
         ]
-        executor = ThreadPoolExecutor(max_workers=len(jobs))
+
+        len_jobs = len(jobs) or 1
+        executor = ThreadPoolExecutor(max_workers=len_jobs)
 
         def _scp_callback(future_, master_=None, worker_=None, msg_=""):
             with Run.GLOBAL_LOCK:
